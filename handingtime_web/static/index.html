@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Handingtime 操作台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --line: #d8dde6;
+      --text: #202733;
+      --muted: #687385;
+      --primary: #176b87;
+      --primary-strong: #0f536b;
+      --danger: #b3261e;
+      --ok: #176f3d;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      padding: 18px 28px;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+
+    main {
+      padding: 24px 28px 36px;
+      display: grid;
+      grid-template-columns: minmax(360px, 520px) minmax(420px, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 16px;
+      font-weight: 650;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin: 14px 0 6px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 11px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 220px;
+      resize: vertical;
+      font-family: Consolas, "Courier New", monospace;
+      line-height: 1.45;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .actions {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 1px solid var(--primary);
+      background: var(--primary);
+      color: #fff;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+      min-height: 40px;
+    }
+
+    button.secondary {
+      background: #fff;
+      color: var(--primary);
+    }
+
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .inline input {
+      width: auto;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(100px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfd;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 22px;
+      margin-top: 4px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #edf3f5;
+      color: var(--primary-strong);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .badge.failed { background: #fdecec; color: var(--danger); }
+    .badge.completed { background: #eaf6ef; color: var(--ok); }
+
+    pre {
+      height: 390px;
+      overflow: auto;
+      margin: 12px 0 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #111820;
+      color: #d7e2ee;
+      padding: 14px;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    .downloads {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .downloads a {
+      color: var(--primary);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      text-decoration: none;
+      background: #fff;
+      font-size: 13px;
+    }
+
+    @media (max-width: 980px) {
+      main { grid-template-columns: 1fr; padding: 18px; }
+      header { padding: 16px 18px; align-items: flex-start; flex-direction: column; }
+      .status-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Handingtime 操作台</h1>
+      <div class="hint">输入店铺账号、SKU 和目标天数，后台批量执行并生成结果文件。</div>
+    </div>
+    <span id="serverState" class="badge">未连接</span>
+  </header>
+
+  <main>
+    <section>
+      <h2>新建任务</h2>
+      <div class="row">
+        <div>
+          <label for="preset">店铺预设</label>
+          <select id="preset">
+            <option value="AmazonEPUS">EPUS - AmazonEPUS</option>
+            <option value="Amazon_PZnew_US_US">DAMAUS - Amazon_PZnew_US_US</option>
+            <option value="">自定义</option>
+          </select>
+        </div>
+        <div>
+          <label for="account">店铺账号</label>
+          <input id="account" value="AmazonEPUS" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="handingTime">修改天数</label>
+          <input id="handingTime" type="number" min="1" value="2" />
+        </div>
+        <div>
+          <label for="batchSize">后台批大小</label>
+          <input id="batchSize" type="number" min="1" max="1000" value="500" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="accessToken">访问令牌</label>
+          <input id="accessToken" type="password" placeholder="服务器设置 HT_WEB_TOKEN 时必填" />
+        </div>
+        <div>
+          <label for="loginUser">易仓登录账号</label>
+          <input id="loginUser" value="CNSZ401" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="loginPass">易仓登录密码</label>
+          <input id="loginPass" type="password" placeholder="默认使用环境变量或本机输入" />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="saveTokenBtn" class="secondary" type="button">保存令牌</button>
+        </div>
+      </div>
+
+      <label for="file">SKU 文件</label>
+      <input id="file" type="file" accept=".csv,.txt" />
+
+      <label for="skuText">SKU 内容</label>
+      <textarea id="skuText" placeholder="一行一个 SKU，也支持逗号、空格分隔。CSV 第一行如果是 seller_sku 会自动忽略。"></textarea>
+      <div class="hint" id="skuCount">SKU：0</div>
+
+      <label class="inline">
+        <input id="dryRun" type="checkbox" />
+        只查询不保存
+      </label>
+
+      <div class="actions">
+        <button id="startBtn">开始执行</button>
+        <button id="clearBtn" class="secondary">清空 SKU</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>任务状态</h2>
+      <div id="jobBadge" class="badge">无任务</div>
+      <div class="status-grid">
+        <div class="metric"><span>SKU 总数</span><strong id="mTotal">0</strong></div>
+        <div class="metric"><span>已处理</span><strong id="mProcessed">0</strong></div>
+        <div class="metric"><span>成功保存</span><strong id="mOk">0</strong></div>
+        <div class="metric"><span>未查到/失败</span><strong id="mIssue">0</strong></div>
+      </div>
+      <div class="hint" id="jobMeta">任务启动后这里会显示进度。</div>
+      <div class="downloads" id="downloads"></div>
+      <pre id="logs"></pre>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let currentJobId = null;
+    let pollTimer = null;
+
+    function splitSkus(text) {
+      const seen = new Set();
+      const out = [];
+      text.split(/[\s,，;；]+/).map(s => s.trim()).filter(Boolean).forEach((sku) => {
+        if (/^seller_sku$/i.test(sku)) return;
+        if (!seen.has(sku)) {
+          seen.add(sku);
+          out.push(sku);
+        }
+      });
+      return out;
+    }
+
+    function updateSkuCount() {
+      $("skuCount").textContent = `SKU：${splitSkus($("skuText").value).length}`;
+    }
+
+    function setBadge(el, status) {
+      el.className = "badge";
+      if (status === "completed" || status === "completed_with_failures") el.classList.add("completed");
+      if (status === "failed") el.classList.add("failed");
+      el.textContent = status || "无任务";
+    }
+
+    function authHeaders() {
+      const token = $("accessToken").value || localStorage.getItem("htAccessToken") || "";
+      return token ? { "X-HT-Token": token } : {};
+    }
+
+    async function loadConfig() {
+      const res = await fetch("/api/config");
+      const data = await res.json();
+      $("loginUser").value = data.defaultLoginUser || "CNSZ401";
+      $("serverState").textContent = "已连接";
+      $("serverState").className = "badge completed";
+    }
+
+    async function startJob() {
+      const payload = {
+        account: $("account").value.trim(),
+        handingTime: $("handingTime").value.trim(),
+        batchSize: Number($("batchSize").value || 500),
+        loginUser: $("loginUser").value.trim(),
+        loginPass: $("loginPass").value,
+        dryRun: $("dryRun").checked,
+        skuText: splitSkus($("skuText").value).join("\n")
+      };
+      $("startBtn").disabled = true;
+      try {
+        const res = await fetch("/api/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "创建任务失败");
+        currentJobId = data.job.id;
+        $("logs").textContent = "";
+        poll();
+        pollTimer = setInterval(poll, 2500);
+      } catch (err) {
+        alert(err.message);
+        $("startBtn").disabled = false;
+      }
+    }
+
+    async function poll() {
+      if (!currentJobId) return;
+      const [jobRes, logRes] = await Promise.all([
+        fetch(`/api/jobs/${currentJobId}`, { headers: authHeaders() }),
+        fetch(`/api/jobs/${currentJobId}/logs?limit=800`, { headers: authHeaders() })
+      ]);
+      const jobData = await jobRes.json();
+      const logData = await logRes.json();
+      const job = jobData.job;
+      setBadge($("jobBadge"), job.status);
+      $("mTotal").textContent = job.skus_total;
+      $("mProcessed").textContent = job.processed;
+      $("mOk").textContent = job.saved_ok;
+      $("mIssue").textContent = Number(job.not_found || 0) + Number(job.save_failed || 0);
+      $("jobMeta").textContent = `ID ${job.id} | account=${job.account} | handing_time=${job.handing_time} | started=${job.started_at || "-"} | finished=${job.finished_at || "-"}`;
+      $("logs").textContent = (logData.lines || []).join("\n");
+      $("logs").scrollTop = $("logs").scrollHeight;
+      $("downloads").innerHTML = ["log", "results", "not_found", "failed"].map(name => {
+        const label = {log: "运行日志", results: "结果 CSV", not_found: "未查到 CSV", failed: "失败 CSV"}[name];
+        return `<a href="/api/jobs/${job.id}/download/${name}" data-download="${name}">${label}</a>`;
+      }).join("");
+      if (["completed", "completed_with_failures", "failed"].includes(job.status)) {
+        clearInterval(pollTimer);
+        $("startBtn").disabled = false;
+      }
+    }
+
+    $("preset").addEventListener("change", () => {
+      if ($("preset").value) $("account").value = $("preset").value;
+    });
+    $("file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      $("skuText").value = text;
+      updateSkuCount();
+    });
+    $("skuText").addEventListener("input", updateSkuCount);
+    $("clearBtn").addEventListener("click", () => {
+      $("skuText").value = "";
+      $("file").value = "";
+      updateSkuCount();
+    });
+    $("saveTokenBtn").addEventListener("click", () => {
+      localStorage.setItem("htAccessToken", $("accessToken").value);
+      alert("访问令牌已保存在当前浏览器。");
+    });
+    $("downloads").addEventListener("click", async (event) => {
+      const link = event.target.closest("a[data-download]");
+      if (!link || !currentJobId) return;
+      event.preventDefault();
+      const res = await fetch(link.href, { headers: authHeaders() });
+      if (!res.ok) {
+        alert("下载失败，请检查访问令牌。");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentJobId}-${link.dataset.download}.${link.dataset.download === "log" ? "log" : "csv"}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    $("startBtn").addEventListener("click", startJob);
+
+    $("accessToken").value = localStorage.getItem("htAccessToken") || "";
+    loadConfig().catch(() => {
+      $("serverState").textContent = "连接失败";
+      $("serverState").className = "badge failed";
+    });
+  </script>
+</body>
+</html>

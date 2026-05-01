@@ -1,0 +1,19 @@
+[Unit]
+Description=Handingtime Web Console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/handingtime
+Environment=HT_WEB_HOST=127.0.0.1
+Environment=HT_WEB_PORT=8765
+Environment=ECCANG_USER=CNSZ401
+Environment=ECCANG_PASS=CHANGE_ME
+Environment=HT_WEB_TOKEN=CHANGE_ME
+ExecStart=/opt/handingtime/venv/bin/python -u /opt/handingtime/handingtime_web/server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
