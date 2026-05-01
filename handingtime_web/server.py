@@ -31,6 +31,9 @@ DEFAULT_BATCH_SIZE = 500
 DEFAULT_QUERY_CHUNK_SIZE = 150
 DEFAULT_SAVE_CHUNK_SIZE = 150
 WEB_TOKEN = os.environ.get("HT_WEB_TOKEN", "")
+BASE_PATH = os.environ.get("HT_WEB_BASE_PATH", "/handingtime").rstrip("/")
+if BASE_PATH and not BASE_PATH.startswith("/"):
+    BASE_PATH = "/" + BASE_PATH
 
 ACCOUNT_PRESETS = {
     "EPUS": "AmazonEPUS",
@@ -275,6 +278,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def normalize_path(self) -> str:
+        path = urlparse(self.path).path
+        if BASE_PATH and path == BASE_PATH:
+            return "/"
+        if BASE_PATH and path.startswith(BASE_PATH + "/"):
+            return path[len(BASE_PATH) :]
+        return path
+
     def read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length).decode("utf-8")
@@ -292,7 +303,7 @@ class Handler(SimpleHTTPRequestHandler):
         return False
 
     def do_POST(self) -> None:
-        if self.path != "/api/jobs":
+        if self.normalize_path() != "/api/jobs":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         if not self.require_auth():
@@ -343,9 +354,16 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        path = parsed.path
+        path = self.normalize_path()
         if path == "/api/config":
-            self.send_json({"accounts": ACCOUNT_PRESETS, "defaultLoginUser": DEFAULT_LOGIN_USER, "tokenRequired": bool(WEB_TOKEN)})
+            self.send_json(
+                {
+                    "accounts": ACCOUNT_PRESETS,
+                    "defaultLoginUser": DEFAULT_LOGIN_USER,
+                    "tokenRequired": bool(WEB_TOKEN),
+                    "basePath": BASE_PATH,
+                }
+            )
             return
         if path == "/api/jobs":
             if not self.require_auth():
@@ -395,6 +413,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(content)
                 return
+        if BASE_PATH and parsed.path == BASE_PATH:
+            self.path = "/"
+        elif BASE_PATH and parsed.path.startswith(BASE_PATH + "/"):
+            self.path = parsed.path[len(BASE_PATH) :] or "/"
+            if parsed.query:
+                self.path += "?" + parsed.query
         return super().do_GET()
 
 
@@ -402,7 +426,7 @@ def main() -> None:
     host = os.environ.get("HT_WEB_HOST", "127.0.0.1")
     port = int(os.environ.get("HT_WEB_PORT", "8765"))
     httpd = ThreadingHTTPServer((host, port), Handler)
-    print(f"Handingtime console running at http://{host}:{port}")
+    print(f"Handingtime console running at http://{host}:{port}{BASE_PATH or ''}/")
     httpd.serve_forever()
 
 

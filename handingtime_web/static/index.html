@@ -318,6 +318,11 @@
     const $ = (id) => document.getElementById(id);
     let currentJobId = null;
     let pollTimer = null;
+    let basePath = window.location.pathname.startsWith("/handingtime") ? "/handingtime" : "";
+
+    function api(path) {
+      return `${basePath}${path}`;
+    }
 
     function splitSkus(text) {
       const seen = new Set();
@@ -349,8 +354,9 @@
     }
 
     async function loadConfig() {
-      const res = await fetch("/api/config");
+      const res = await fetch(api("/api/config"));
       const data = await res.json();
+      basePath = data.basePath || basePath;
       $("loginUser").value = data.defaultLoginUser || "CNSZ401";
       $("serverState").textContent = "已连接";
       $("serverState").className = "badge completed";
@@ -368,7 +374,7 @@
       };
       $("startBtn").disabled = true;
       try {
-        const res = await fetch("/api/jobs", {
+        const res = await fetch(api("/api/jobs"), {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify(payload)
@@ -388,8 +394,8 @@
     async function poll() {
       if (!currentJobId) return;
       const [jobRes, logRes] = await Promise.all([
-        fetch(`/api/jobs/${currentJobId}`, { headers: authHeaders() }),
-        fetch(`/api/jobs/${currentJobId}/logs?limit=800`, { headers: authHeaders() })
+        fetch(api(`/api/jobs/${currentJobId}`), { headers: authHeaders() }),
+        fetch(api(`/api/jobs/${currentJobId}/logs?limit=800`), { headers: authHeaders() })
       ]);
       const jobData = await jobRes.json();
       const logData = await logRes.json();
@@ -404,7 +410,7 @@
       $("logs").scrollTop = $("logs").scrollHeight;
       $("downloads").innerHTML = ["log", "results", "not_found", "failed"].map(name => {
         const label = {log: "运行日志", results: "结果 CSV", not_found: "未查到 CSV", failed: "失败 CSV"}[name];
-        return `<a href="/api/jobs/${job.id}/download/${name}" data-download="${name}">${label}</a>`;
+        return `<a href="${api(`/api/jobs/${job.id}/download/${name}`)}" data-download="${name}">${label}</a>`;
       }).join("");
       if (["completed", "completed_with_failures", "failed"].includes(job.status)) {
         clearInterval(pollTimer);

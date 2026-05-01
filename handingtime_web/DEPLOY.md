@@ -40,13 +40,14 @@ export ECCANG_PASS='your-password'
 export HT_WEB_TOKEN='choose-a-long-random-token'
 export HT_WEB_HOST='0.0.0.0'
 export HT_WEB_PORT='8765'
+export HT_WEB_BASE_PATH='/handingtime'
 ./venv/bin/python -u handingtime_web/server.py
 ```
 
 Open:
 
 ```text
-http://SERVER_IP:8765
+http://SERVER_IP:8765/handingtime/
 ```
 
 If using Tencent Cloud security groups, allow inbound TCP `8765`, or use Nginx reverse proxy on port `80/443`.
@@ -66,6 +67,7 @@ Set these values:
 Environment=ECCANG_USER=CNSZ401
 Environment=ECCANG_PASS=your-password
 Environment=HT_WEB_TOKEN=choose-a-long-random-token
+Environment=HT_WEB_BASE_PATH=/handingtime
 ```
 
 Then:
@@ -93,7 +95,11 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Keep app bound to `127.0.0.1:8765` when using Nginx.
+Keep app bound to `127.0.0.1:8765` when using Nginx. The Nginx template exposes the app at:
+
+```text
+http://YOUR_DOMAIN_OR_IP/handingtime/
+```
 
 ## Runtime Data
 

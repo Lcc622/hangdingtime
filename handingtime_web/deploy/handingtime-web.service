@@ -8,6 +8,7 @@ Type=simple
 WorkingDirectory=/opt/handingtime
 Environment=HT_WEB_HOST=127.0.0.1
 Environment=HT_WEB_PORT=8765
+Environment=HT_WEB_BASE_PATH=/handingtime
 Environment=ECCANG_USER=CNSZ401
 Environment=ECCANG_PASS=CHANGE_ME
 Environment=HT_WEB_TOKEN=CHANGE_ME

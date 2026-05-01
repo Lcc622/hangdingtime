@@ -19,7 +19,7 @@ $env:HT_WEB_TOKEN='choose-a-long-random-token'
 Open:
 
 ```text
-http://127.0.0.1:8765
+http://127.0.0.1:8765/handingtime/
 ```
 
 ## Server Deployment
@@ -33,4 +33,3 @@ Each job writes logs and CSV results under:
 ```text
 handingtime_web/data/jobs/<job_id>/
 ```
-
