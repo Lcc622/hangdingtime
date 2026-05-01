@@ -148,6 +148,9 @@ def run_job(job_id: str, skus: list[str], login_user: str, login_pass: str) -> N
 
     os.environ["ECCANG_USER"] = login_user
     os.environ["ECCANG_PASS"] = login_pass
+    if hasattr(HT, "eccang_auth"):
+        HT.eccang_auth.LOGIN_USER = login_user
+        HT.eccang_auth.LOGIN_PASS = login_pass
 
     with jobs_lock:
         job.status = "running"
