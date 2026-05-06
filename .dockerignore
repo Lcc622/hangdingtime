@@ -1,0 +1,11 @@
+.git
+.idea
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.venv*
+handingtime_web/data/jobs
+handingtime_web/data/auth
+handingtime_web/server.out.log
+handingtime_web/server.err.log
+*.zip

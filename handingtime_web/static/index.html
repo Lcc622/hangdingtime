@@ -82,6 +82,14 @@
       background: #fff;
     }
 
+    input[type="file"].hidden-file-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
     textarea {
       min-height: 220px;
       resize: vertical;
@@ -101,6 +109,46 @@
       gap: 10px;
       align-items: center;
       flex-wrap: wrap;
+    }
+
+    .file-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin: 10px 0;
+    }
+
+    .upload-choice {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      margin: 0;
+      border: 1px solid var(--primary);
+      border-radius: 6px;
+      padding: 10px 14px;
+      background: var(--primary);
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .upload-choice.secondary {
+      background: #fff;
+      color: var(--primary);
+    }
+
+    .drop-zone {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfd;
+    }
+
+    .drop-zone.dragging {
+      border-color: var(--primary);
+      background: #edf3f5;
     }
 
     button {
@@ -214,10 +262,43 @@
       font-size: 13px;
     }
 
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 6px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: #fbfcfd;
+    }
+
+    .file-name {
+      word-break: break-all;
+    }
+
+    .error-text {
+      color: var(--danger);
+    }
+
+    .ok-text {
+      color: var(--ok);
+    }
+
     @media (max-width: 980px) {
       main { grid-template-columns: 1fr; padding: 18px; }
       header { padding: 16px 18px; align-items: flex-start; flex-direction: column; }
       .status-grid { grid-template-columns: repeat(2, 1fr); }
+      .row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -225,7 +306,7 @@
   <header>
     <div>
       <h1>Handingtime 操作台</h1>
-      <div class="hint">输入店铺账号、SKU 和目标天数，后台批量执行并生成结果文件。</div>
+      <div class="hint">上传文件后按文件名自动识别店铺账号和 handingtime 天数，后台批量执行并生成结果文件。</div>
     </div>
     <span id="serverState" class="badge">未连接</span>
   </header>
@@ -233,31 +314,17 @@
   <main>
     <section>
       <h2>新建任务</h2>
-      <div class="row">
-        <div>
-          <label for="preset">店铺预设</label>
-          <select id="preset">
-            <option value="AmazonEPUS">EPUS - AmazonEPUS</option>
-            <option value="Amazon_PZnew_US_US">DAMAUS - Amazon_PZnew_US_US</option>
-            <option value="">自定义</option>
-          </select>
+      <label>SKU 文件</label>
+      <div id="dropZone" class="drop-zone">
+        <div class="file-actions">
+          <label class="upload-choice" for="file">选择多个文件</label>
+          <label class="upload-choice secondary" for="folder">选择文件夹</label>
         </div>
-        <div>
-          <label for="account">店铺账号</label>
-          <input id="account" value="AmazonEPUS" />
-        </div>
+        <input id="file" class="hidden-file-input" type="file" accept=".csv,.txt,text/csv,text/plain" multiple />
+        <input id="folder" class="hidden-file-input" type="file" webkitdirectory directory multiple />
+        <div class="hint">文件名示例：epus_instock_ht2.csv、damaus_outofstock_ht6.csv。前缀识别店铺账号，ht 后面的数字识别修改天数。</div>
       </div>
-
-      <div class="row">
-        <div>
-          <label for="handingTime">修改天数</label>
-          <input id="handingTime" type="number" min="1" value="2" />
-        </div>
-        <div>
-          <label for="batchSize">后台批大小</label>
-          <input id="batchSize" type="number" min="1" max="1000" value="500" />
-        </div>
-      </div>
+      <div id="fileQueue" class="hint">尚未选择文件。</div>
 
       <div class="row">
         <div>
@@ -281,12 +348,8 @@
         </div>
       </div>
 
-      <label for="file">SKU 文件</label>
-      <input id="file" type="file" accept=".csv,.txt" />
-
-      <label for="skuText">SKU 内容</label>
-      <textarea id="skuText" placeholder="一行一个 SKU，也支持逗号、空格分隔。CSV 第一行如果是 seller_sku 会自动忽略。"></textarea>
-      <div class="hint" id="skuCount">SKU：0</div>
+      <label for="batchSize">后台批大小</label>
+      <input id="batchSize" type="number" min="1" max="1000" value="500" />
 
       <label class="inline">
         <input id="dryRun" type="checkbox" />
@@ -295,7 +358,7 @@
 
       <div class="actions">
         <button id="startBtn">开始执行</button>
-        <button id="clearBtn" class="secondary">清空 SKU</button>
+        <button id="clearBtn" class="secondary">清空文件</button>
       </div>
     </section>
 
@@ -316,9 +379,14 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    let currentJobId = null;
+    let currentJobIds = [];
     let pollTimer = null;
     let basePath = window.location.pathname.startsWith("/handingtime") ? "/handingtime" : "";
+    let accountMap = {
+      EPUS: "AmazonEPUS",
+      DAMAUS: "Amazon_PZnew_US_US"
+    };
+    let queuedFiles = [];
 
     function api(path) {
       return `${basePath}${path}`;
@@ -337,8 +405,105 @@
       return out;
     }
 
-    function updateSkuCount() {
-      $("skuCount").textContent = `SKU：${splitSkus($("skuText").value).length}`;
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[char]);
+    }
+
+    function inferFromFileName(fileName) {
+      const baseName = fileName.split(/[\\/]/).pop() || fileName;
+      const stem = baseName.replace(/\.[^.]+$/, "");
+      const accountKey = (stem.split(/[_\-\s]+/)[0] || "").toUpperCase();
+      const htMatch = stem.match(/(?:^|[_\-\s])ht(\d+)(?=$|[_\-\s])/i);
+      return {
+        accountKey,
+        account: accountMap[accountKey] || "",
+        handingTime: htMatch ? htMatch[1] : ""
+      };
+    }
+
+    function fileProblem(item) {
+      if (!item.account) return `无法识别店铺前缀：${item.accountKey || "-"}`;
+      if (!item.handingTime) return "无法识别 ht 天数";
+      if (!item.skus.length) return "文件内没有可处理 SKU";
+      return "";
+    }
+
+    function isSkuFile(file) {
+      return /\.(csv|txt)$/i.test(file.name || "");
+    }
+
+    function fileKey(file) {
+      return [
+        file.webkitRelativePath || file.name,
+        file.size,
+        file.lastModified
+      ].join("|");
+    }
+
+    function displayName(file) {
+      return file.webkitRelativePath || file.name;
+    }
+
+    async function addFiles(fileList) {
+      const existing = new Set(queuedFiles.map(item => item.key));
+      const files = Array.from(fileList || []).filter(isSkuFile);
+      const additions = [];
+      for (const file of files) {
+        const key = fileKey(file);
+        if (existing.has(key)) continue;
+        existing.add(key);
+        const text = await file.text();
+        const name = displayName(file);
+        const inferred = inferFromFileName(name);
+        additions.push({
+          key,
+          name,
+          skus: splitSkus(text),
+          ...inferred
+        });
+      }
+      queuedFiles = [...queuedFiles, ...additions];
+      renderFileQueue();
+    }
+
+    function renderFileQueue() {
+      if (!queuedFiles.length) {
+        $("fileQueue").textContent = "尚未选择文件。";
+        return;
+      }
+      const rows = queuedFiles.map((item) => {
+        const problem = fileProblem(item);
+        const state = problem ? `<span class="error-text">${escapeHtml(problem)}</span>` : `<span class="ok-text">可执行</span>`;
+        return `
+          <tr>
+            <td class="file-name">${escapeHtml(item.name)}</td>
+            <td>${escapeHtml(item.accountKey)}<br>${escapeHtml(item.account || "-")}</td>
+            <td>${escapeHtml(item.handingTime || "-")}</td>
+            <td>${item.skus.length}</td>
+            <td>${state}</td>
+          </tr>
+        `;
+      }).join("");
+      $("fileQueue").innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>文件</th>
+              <th>店铺</th>
+              <th>天数</th>
+              <th>SKU</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
     }
 
     function setBadge(el, status) {
@@ -357,32 +522,51 @@
       const res = await fetch(api("/api/config"));
       const data = await res.json();
       basePath = data.basePath || basePath;
+      accountMap = data.accounts || accountMap;
+      queuedFiles = queuedFiles.map(item => ({ ...item, ...inferFromFileName(item.name) }));
       $("loginUser").value = data.defaultLoginUser || "CNSZ401";
       $("serverState").textContent = "已连接";
       $("serverState").className = "badge completed";
+      renderFileQueue();
     }
 
     async function startJob() {
-      const payload = {
-        account: $("account").value.trim(),
-        handingTime: $("handingTime").value.trim(),
-        batchSize: Number($("batchSize").value || 500),
-        loginUser: $("loginUser").value.trim(),
-        loginPass: $("loginPass").value,
-        dryRun: $("dryRun").checked,
-        skuText: splitSkus($("skuText").value).join("\n")
-      };
+      if (!queuedFiles.length) {
+        alert("请先选择 SKU 文件。");
+        return;
+      }
+      const invalid = queuedFiles.filter(fileProblem);
+      if (invalid.length) {
+        alert(`有 ${invalid.length} 个文件无法执行，请先检查文件名或 SKU 内容。`);
+        return;
+      }
       $("startBtn").disabled = true;
       try {
-        const res = await fetch(api("/api/jobs"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "创建任务失败");
-        currentJobId = data.job.id;
+        const created = [];
+        for (const item of queuedFiles) {
+          const payload = {
+            sourceFile: item.name,
+            account: item.account,
+            handingTime: item.handingTime,
+            batchSize: Number($("batchSize").value || 500),
+            loginUser: $("loginUser").value.trim(),
+            loginPass: $("loginPass").value,
+            dryRun: $("dryRun").checked,
+            skuText: item.skus.join("\n")
+          };
+          const res = await fetch(api("/api/jobs"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(`${item.name}: ${data.error || "创建任务失败"}`);
+          created.push(data.job.id);
+        }
+        currentJobIds = created;
         $("logs").textContent = "";
+        $("downloads").innerHTML = "";
+        if (pollTimer) clearInterval(pollTimer);
         poll();
         pollTimer = setInterval(poll, 2500);
       } catch (err) {
@@ -392,47 +576,71 @@
     }
 
     async function poll() {
-      if (!currentJobId) return;
-      const [jobRes, logRes] = await Promise.all([
-        fetch(api(`/api/jobs/${currentJobId}`), { headers: authHeaders() }),
-        fetch(api(`/api/jobs/${currentJobId}/logs?limit=800`), { headers: authHeaders() })
-      ]);
-      const jobData = await jobRes.json();
-      const logData = await logRes.json();
-      const job = jobData.job;
-      setBadge($("jobBadge"), job.status);
-      $("mTotal").textContent = job.skus_total;
-      $("mProcessed").textContent = job.processed;
-      $("mOk").textContent = job.saved_ok;
-      $("mIssue").textContent = Number(job.not_found || 0) + Number(job.save_failed || 0);
-      $("jobMeta").textContent = `ID ${job.id} | account=${job.account} | handing_time=${job.handing_time} | started=${job.started_at || "-"} | finished=${job.finished_at || "-"}`;
-      $("logs").textContent = (logData.lines || []).join("\n");
+      if (!currentJobIds.length) return;
+      const items = await Promise.all(currentJobIds.map(async (jobId) => {
+        const [jobRes, logRes] = await Promise.all([
+          fetch(api(`/api/jobs/${jobId}`), { headers: authHeaders() }),
+          fetch(api(`/api/jobs/${jobId}/logs?limit=120`), { headers: authHeaders() })
+        ]);
+        const jobData = await jobRes.json();
+        const logData = await logRes.json();
+        return { job: jobData.job, lines: logData.lines || [] };
+      }));
+      const jobs = items.map(item => item.job).filter(Boolean);
+      const active = jobs.filter(job => !["completed", "completed_with_failures", "failed"].includes(job.status));
+      const failed = jobs.filter(job => job.status === "failed").length;
+      const withFailures = jobs.filter(job => job.status === "completed_with_failures").length;
+      const completed = jobs.filter(job => job.status === "completed").length;
+      const status = active.length ? "running" : (failed ? "failed" : (withFailures ? "completed_with_failures" : "completed"));
+      setBadge($("jobBadge"), status);
+      $("mTotal").textContent = jobs.reduce((sum, job) => sum + Number(job.skus_total || 0), 0);
+      $("mProcessed").textContent = jobs.reduce((sum, job) => sum + Number(job.processed || 0), 0);
+      $("mOk").textContent = jobs.reduce((sum, job) => sum + Number(job.saved_ok || 0), 0);
+      $("mIssue").textContent = jobs.reduce((sum, job) => sum + Number(job.not_found || 0) + Number(job.save_failed || 0), 0);
+      $("jobMeta").textContent = `任务 ${jobs.length} 个 | 完成 ${completed} 个 | 有失败 ${failed + withFailures} 个 | 运行中 ${active.length} 个`;
+      $("logs").textContent = items.map(({ job, lines }) => {
+        const title = job ? `===== ${job.source_file || job.id} | ${job.account} | ht${job.handing_time} | ${job.status} =====` : "===== unknown =====";
+        return [title, ...lines].join("\n");
+      }).join("\n\n");
       $("logs").scrollTop = $("logs").scrollHeight;
-      $("downloads").innerHTML = ["log", "results", "not_found", "failed"].map(name => {
-        const label = {log: "运行日志", results: "结果 CSV", not_found: "未查到 CSV", failed: "失败 CSV"}[name];
-        return `<a href="${api(`/api/jobs/${job.id}/download/${name}`)}" data-download="${name}">${label}</a>`;
+      $("downloads").innerHTML = jobs.flatMap(job => {
+        return ["log", "results", "not_found", "failed"].map(name => {
+          const label = {log: "日志", results: "结果", not_found: "未查到", failed: "失败"}[name];
+          const title = job.source_file || job.id;
+          return `<a href="${api(`/api/jobs/${job.id}/download/${name}`)}" data-job-id="${job.id}" data-download="${name}">${escapeHtml(title)} - ${label}</a>`;
+        });
       }).join("");
-      if (["completed", "completed_with_failures", "failed"].includes(job.status)) {
+      if (!active.length) {
         clearInterval(pollTimer);
         $("startBtn").disabled = false;
       }
     }
 
-    $("preset").addEventListener("change", () => {
-      if ($("preset").value) $("account").value = $("preset").value;
-    });
     $("file").addEventListener("change", async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      const text = await file.text();
-      $("skuText").value = text;
-      updateSkuCount();
-    });
-    $("skuText").addEventListener("input", updateSkuCount);
-    $("clearBtn").addEventListener("click", () => {
-      $("skuText").value = "";
+      await addFiles(event.target.files);
       $("file").value = "";
-      updateSkuCount();
+    });
+    $("folder").addEventListener("change", async (event) => {
+      await addFiles(event.target.files);
+      $("folder").value = "";
+    });
+    $("dropZone").addEventListener("dragover", (event) => {
+      event.preventDefault();
+      $("dropZone").classList.add("dragging");
+    });
+    $("dropZone").addEventListener("dragleave", () => {
+      $("dropZone").classList.remove("dragging");
+    });
+    $("dropZone").addEventListener("drop", async (event) => {
+      event.preventDefault();
+      $("dropZone").classList.remove("dragging");
+      await addFiles(event.dataTransfer.files);
+    });
+    $("clearBtn").addEventListener("click", () => {
+      $("file").value = "";
+      $("folder").value = "";
+      queuedFiles = [];
+      renderFileQueue();
     });
     $("saveTokenBtn").addEventListener("click", () => {
       localStorage.setItem("htAccessToken", $("accessToken").value);
@@ -440,7 +648,7 @@
     });
     $("downloads").addEventListener("click", async (event) => {
       const link = event.target.closest("a[data-download]");
-      if (!link || !currentJobId) return;
+      if (!link) return;
       event.preventDefault();
       const res = await fetch(link.href, { headers: authHeaders() });
       if (!res.ok) {
@@ -451,7 +659,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${currentJobId}-${link.dataset.download}.${link.dataset.download === "log" ? "log" : "csv"}`;
+      a.download = `${link.dataset.jobId}-${link.dataset.download}.${link.dataset.download === "log" ? "log" : "csv"}`;
       a.click();
       URL.revokeObjectURL(url);
     });

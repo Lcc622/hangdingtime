@@ -1,0 +1,21 @@
+services:
+  handingtime-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: handingtime-web-local
+    ports:
+      - "8765:8765"
+    environment:
+      HT_WEB_HOST: 0.0.0.0
+      HT_WEB_PORT: "8765"
+      HT_WEB_BASE_PATH: /handingtime
+      HT_WEB_TOKEN: ${HT_WEB_TOKEN:-}
+      ECCANG_USER: ${ECCANG_USER:-CNSZ401}
+      ECCANG_PASS: ${ECCANG_PASS:-}
+      ECCANG_DATA_DIR: /app/handingtime_web/data/auth
+      HT_PLAYWRIGHT_BOOTSTRAP: "0"
+      HT_PLAYWRIGHT_AUTO_INSTALL: "0"
+    volumes:
+      - ./handingtime_web/data:/app/handingtime_web/data
+    restart: unless-stopped

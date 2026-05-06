@@ -14,6 +14,8 @@
 """
 import json
 import os
+import subprocess
+import sys
 import requests
 from playwright.sync_api import sync_playwright
 
@@ -33,6 +35,53 @@ LOGIN_PASS = os.environ.get('ECCANG_PASS', '')
 
 _DEFAULT_DATA_DIR = os.environ.get('ECCANG_DATA_DIR') or os.path.dirname(os.path.abspath(__file__))
 os.makedirs(_DEFAULT_DATA_DIR, exist_ok=True)
+
+
+def _playwright_install_command() -> list[str]:
+    return [sys.executable, '-m', 'playwright', 'install', 'chromium']
+
+
+def _playwright_install_text() -> str:
+    return ' '.join(_playwright_install_command())
+
+
+def _ensure_playwright_chromium(playwright) -> None:
+    executable = playwright.chromium.executable_path
+    if executable and os.path.exists(executable):
+        return
+
+    auto_install = os.environ.get('HT_PLAYWRIGHT_AUTO_INSTALL', '1').strip().lower()
+    if auto_install in {'0', 'false', 'no', 'off'}:
+        raise RuntimeError(
+            'Playwright Chromium is not installed. Run this on the server: '
+            f'{_playwright_install_text()}'
+        )
+
+    print('  Playwright Chromium is missing; installing browser files...')
+    try:
+        completed = subprocess.run(
+            _playwright_install_command(),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise RuntimeError(
+            'Playwright Chromium install failed. Run this on the server: '
+            f'{_playwright_install_text()}'
+        ) from exc
+
+    if completed.stdout:
+        print(completed.stdout.strip())
+    if completed.stderr:
+        print(completed.stderr.strip())
+
+    if not executable or not os.path.exists(executable):
+        raise RuntimeError(
+            'Playwright Chromium is still missing after install. Run this on the server: '
+            f'{_playwright_install_text()}'
+        )
 
 
 def _cookie_file(domain: str) -> str:
@@ -99,7 +148,14 @@ def _login_via_playwright() -> dict[str, dict[str, str]]:
     if not LOGIN_USER or not LOGIN_PASS:
         raise RuntimeError('ECCANG_USER and ECCANG_PASS must be set before automatic login.')
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        _ensure_playwright_chromium(p)
+        try:
+            browser = p.chromium.launch(headless=True)
+        except Exception as exc:
+            raise RuntimeError(
+                'Playwright Chromium failed to launch. On Linux, install browser dependencies with: '
+                f'{sys.executable} -m playwright install --with-deps chromium'
+            ) from exc
         context = browser.new_context(ignore_https_errors=True)
         page = context.new_page()
 

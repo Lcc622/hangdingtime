@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -56,6 +57,28 @@ def load_handingtime_module() -> Any:
 HT = load_handingtime_module()
 
 
+def install_playwright_chromium() -> tuple[bool, str]:
+    if os.environ.get("HT_PLAYWRIGHT_BOOTSTRAP", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return True, "Playwright browser bootstrap disabled by HT_PLAYWRIGHT_BOOTSTRAP."
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        return False, (
+            "Failed to install Playwright Chromium. Run this on the server: "
+            f"{sys.executable} -m playwright install --with-deps chromium\n{exc}"
+        )
+
+    output = "\n".join(part.strip() for part in (completed.stdout, completed.stderr) if part and part.strip())
+    return True, output or "Playwright Chromium is installed."
+
+
 def now_text() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -75,6 +98,15 @@ def split_skus(raw: str) -> list[str]:
     return deduped
 
 
+def infer_job_from_filename(filename: str) -> tuple[str, str, str]:
+    stem = Path(filename).stem
+    account_key = re.split(r"[_\-\s]+", stem.strip(), maxsplit=1)[0].upper()
+    account = ACCOUNT_PRESETS.get(account_key, "")
+    ht_match = re.search(r"(?:^|[_\-\s])ht(\d+)(?=$|[_\-\s])", stem, re.IGNORECASE)
+    handing_time = ht_match.group(1) if ht_match else ""
+    return account_key, account, handing_time
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -89,6 +121,7 @@ class Job:
     account: str
     handing_time: str
     skus_total: int
+    source_file: str = ""
     dry_run: bool = False
     batch_size: int = DEFAULT_BATCH_SIZE
     status: str = "queued"
@@ -110,6 +143,7 @@ class Job:
 
 jobs: dict[str, Job] = {}
 job_logs: dict[str, queue.Queue[str]] = {}
+job_work_queue: queue.Queue[tuple[str, list[str], str, str]] = queue.Queue()
 jobs_lock = threading.Lock()
 
 
@@ -121,6 +155,15 @@ def append_log(job: Job, message: str) -> None:
     if job.log_path:
         with open(job.log_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
+
+
+def job_worker() -> None:
+    while True:
+        job_id, skus, login_user, login_pass = job_work_queue.get()
+        try:
+            run_job(job_id, skus, login_user, login_pass)
+        finally:
+            job_work_queue.task_done()
 
 
 def find_listings_for_group(session: Any, skus: list[str], account: str, page_size: int) -> list[dict[str, Any]]:
@@ -155,9 +198,18 @@ def run_job(job_id: str, skus: list[str], login_user: str, login_pass: str) -> N
     with jobs_lock:
         job.status = "running"
         job.started_at = now_text()
-    append_log(job, f"Started job. account={job.account}, handing_time={job.handing_time}, skus={len(skus)}, dry_run={job.dry_run}")
+    append_log(
+        job,
+        f"Started job. file={job.source_file or '-'}, account={job.account}, "
+        f"handing_time={job.handing_time}, skus={len(skus)}, dry_run={job.dry_run}",
+    )
 
     try:
+        ok, bootstrap_log = install_playwright_chromium()
+        append_log(job, bootstrap_log)
+        if not ok:
+            raise RuntimeError(bootstrap_log)
+
         session = HT.make_session(None, timeout=90, retries=3)
         groups = HT.chunks(skus, job.batch_size)
         for batch_index, group in enumerate(groups, start=1):
@@ -269,6 +321,9 @@ def run_job(job_id: str, skus: list[str], login_user: str, login_pass: str) -> N
             write_csv(Path(job.failed_path), failed_rows, ["seller_sku", "listing_id", "id", "old_handing_time", "new_handing_time", "status", "message"])
 
 
+threading.Thread(target=job_worker, daemon=True).start()
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, directory=str(APP_DIR / "static"), **kwargs)
@@ -314,6 +369,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         try:
             payload = self.read_json()
+            source_file = str(payload.get("sourceFile", "")).strip()
             account = str(payload.get("account", "")).strip()
             handing_time = str(payload.get("handingTime", "")).strip()
             sku_text = str(payload.get("skuText", ""))
@@ -322,8 +378,19 @@ class Handler(SimpleHTTPRequestHandler):
             dry_run = bool(payload.get("dryRun", False))
             batch_size = int(payload.get("batchSize", DEFAULT_BATCH_SIZE))
 
+            if source_file and (not account or not handing_time):
+                account_key, inferred_account, inferred_handing_time = infer_job_from_filename(source_file)
+                account = account or inferred_account
+                handing_time = handing_time or inferred_handing_time
+                if not account:
+                    self.send_json({"error": f"Cannot infer account from file name: {source_file}. Unknown prefix: {account_key}"}, 400)
+                    return
+                if not handing_time:
+                    self.send_json({"error": f"Cannot infer handingTime from file name: {source_file}. Expected ht<number>, for example ht2"}, 400)
+                    return
+
             if not account:
-                self.send_json({"error": "account is required"}, 400)
+                self.send_json({"error": "account is required or must be inferred from sourceFile"}, 400)
                 return
             if not handing_time.isdigit() or int(handing_time) <= 0:
                 self.send_json({"error": "handingTime must be a positive integer"}, 400)
@@ -342,6 +409,7 @@ class Handler(SimpleHTTPRequestHandler):
                 account=account,
                 handing_time=handing_time,
                 skus_total=len(skus),
+                source_file=source_file,
                 dry_run=dry_run,
                 batch_size=batch_size,
             )
@@ -349,8 +417,7 @@ class Handler(SimpleHTTPRequestHandler):
                 jobs[job_id] = job
                 job_logs[job_id] = queue.Queue()
 
-            thread = threading.Thread(target=run_job, args=(job_id, skus, login_user, login_pass), daemon=True)
-            thread.start()
+            job_work_queue.put((job_id, skus, login_user, login_pass))
             self.send_json({"job": asdict(job), "presets": ACCOUNT_PRESETS})
         except Exception as exc:
             self.send_json({"error": str(exc)}, 500)
@@ -423,6 +490,16 @@ class Handler(SimpleHTTPRequestHandler):
             if parsed.query:
                 self.path += "?" + parsed.query
         return super().do_GET()
+
+    def do_HEAD(self) -> None:
+        parsed = urlparse(self.path)
+        if BASE_PATH and parsed.path == BASE_PATH:
+            self.path = "/"
+        elif BASE_PATH and parsed.path.startswith(BASE_PATH + "/"):
+            self.path = parsed.path[len(BASE_PATH) :] or "/"
+            if parsed.query:
+                self.path += "?" + parsed.query
+        return super().do_HEAD()
 
 
 def main() -> None:

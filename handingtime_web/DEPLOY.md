@@ -28,8 +28,13 @@ cd /opt/handingtime
 python3 -m venv venv
 ./venv/bin/pip install -U pip
 ./venv/bin/pip install -r handingtime_web/requirements.txt
-./venv/bin/playwright install chromium
+./venv/bin/python -m playwright install --with-deps chromium
 ```
+
+The app also attempts to install the Chromium browser files automatically if
+they are missing at runtime. Keep the manual install step above for first-time
+Linux setup because `--with-deps` installs system libraries that the browser
+needs to start.
 
 ## Run Manually
 

@@ -11,8 +11,10 @@ Environment=HT_WEB_PORT=8765
 Environment=HT_WEB_BASE_PATH=/handingtime
 Environment=ECCANG_USER=CNSZ401
 Environment=ECCANG_PASS=CHANGE_ME
-Environment=HT_WEB_TOKEN=CHANGE_ME
+Environment=HT_WEB_TOKEN=
+ExecStartPre=/opt/handingtime/venv/bin/python -m playwright install chromium
 ExecStart=/opt/handingtime/venv/bin/python -u /opt/handingtime/handingtime_web/server.py
+TimeoutStartSec=900
 Restart=always
 RestartSec=5
 
